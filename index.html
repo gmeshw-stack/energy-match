@@ -1,0 +1,1074 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>能源對對看 - 泡泡消除遊戲</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #0f172a;
+            color: white;
+            font-family: 'Inter', 'Microsoft JhengHei', sans-serif;
+            overflow-x: hidden;
+            overflow-y: hidden; /* 防止整個網頁滑動，提升遊戲體驗 */
+            touch-action: none;
+        }
+        #gameCanvas {
+            background-color: #1e293b;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            display: block;
+            margin: 0 auto;
+            border: 4px solid #334155;
+            /* 響應式縮放設定 */
+            width: 100%;
+            height: auto;
+            max-height: 80vh; 
+            touch-action: none; 
+        }
+        .hud-panel {
+            background-color: #1e293b;
+            border: 1px solid #475569;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body class="w-full h-screen flex flex-col items-center justify-center p-1 md:p-4 relative">
+
+    <!-- 頂部資訊區 (計時器等) -->
+    <div id="topBar" class="w-full max-w-[960px] flex justify-center mb-2 h-[30px]">
+        <div id="timerDisplay" class="text-sm md:text-lg font-bold text-white hidden bg-slate-800 px-4 py-1 rounded-full shadow-lg border border-slate-600">
+            距離驟死賽: 00:00
+        </div>
+    </div>
+
+    <!-- 主容器：左中右三欄配置 (右側擴充以容納多人畫面) -->
+    <div class="flex flex-row w-full max-w-[1100px] justify-center items-start gap-1 sm:gap-2 md:gap-4 relative">
+        
+        <!-- 左側面板 (分數 + 部分提示) -->
+        <div class="flex flex-col w-[75px] sm:w-[120px] md:w-[150px] shrink-0 gap-2 mt-8 md:mt-12">
+            <!-- 分數區塊 -->
+            <div class="hud-panel p-2 rounded-lg text-center flex flex-col items-center justify-center min-h-[60px]">
+                <div class="text-[10px] md:text-sm text-slate-400 font-bold mb-1">分數</div>
+                <div id="currentScore" class="text-sm sm:text-lg md:text-xl font-bold text-yellow-400">0</div>
+            </div>
+            <!-- 左側分組提示 (前3組) -->
+            <div id="legendLeft" class="flex flex-col gap-1.5 mt-2">
+                <!-- JS 動態生成 -->
+            </div>
+        </div>
+
+        <!-- 中間面板 (主要遊戲區) -->
+        <div class="flex flex-col items-center flex-1 max-w-[480px] shrink">
+            <h1 class="text-lg md:text-2xl font-bold text-white mb-1 md:mb-2 text-center tracking-wide">能源對對看</h1>
+            
+            <div class="relative w-full flex justify-center">
+                <canvas id="gameCanvas" width="480" height="720" class="max-w-full h-auto max-h-[75vh] border-4 border-slate-700 bg-slate-800 rounded-xl shadow-2xl touch-none"></canvas>
+                
+                <!-- 遊戲結束畫面 -->
+                <div id="gameOverOverlay" class="absolute inset-0 bg-black bg-opacity-90 hidden flex-col items-center justify-center rounded-xl z-10 mx-auto w-full h-full">
+                    <h2 id="gameOverTitle" class="text-3xl sm:text-4xl font-bold text-red-400 mb-2">遊戲結束</h2>
+                    <p class="text-xl sm:text-2xl text-white mb-4">得分: <span id="finalScore" class="text-yellow-400 font-bold"></span></p>
+                    
+                    <div id="leaderboardPanel" class="bg-slate-800 rounded-lg p-3 sm:p-4 mb-6 w-4/5 max-w-[240px] text-center border border-slate-600 shadow-xl">
+                        <h3 class="text-lg sm:text-xl text-white font-bold mb-2 border-b border-slate-600 pb-2">單人排行榜</h3>
+                        <ul id="leaderboardList" class="text-slate-300 space-y-1 sm:space-y-2 text-xs sm:text-sm">
+                            <!-- JS 生成排行榜 -->
+                        </ul>
+                    </div>
+
+                    <div class="flex gap-4">
+                        <button onclick="window.backToMenu()" class="px-4 py-2 bg-gray-600 hover:bg-gray-500 rounded-full font-bold text-sm sm:text-lg shadow-lg">
+                            回主選單
+                        </button>
+                        <button id="retryBtn" onclick="window.resetGame()" class="px-5 py-2 sm:px-6 sm:py-3 bg-blue-600 hover:bg-blue-500 rounded-full font-bold text-sm sm:text-lg shadow-lg transition-transform transform hover:scale-105">
+                            再玩一次
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 簡化版遊戲規則說明 -->
+            <p class="text-slate-400 text-[9px] sm:text-[11px] md:text-xs text-center mt-2 leading-tight px-2">
+                同組連3格50分, 4格100分。大泡泡需連3種不同小泡泡消除。<br>
+                <span id="ruleDesc">單人模式：每30秒大泡泡下擠。</span>
+            </p>
+        </div>
+
+        <!-- 右側面板 (下一個 + 部分提示 + 對手畫面) -->
+        <div class="flex flex-col shrink-0 gap-2 mt-8 md:mt-12 w-[80px] sm:w-[130px] md:w-[160px]">
+            <!-- 下一個泡泡區塊 -->
+            <div class="hud-panel p-2 rounded-lg flex flex-col items-center justify-center min-h-[60px]">
+                <div class="text-[10px] md:text-sm text-slate-400 font-bold mb-1">下一個</div>
+                <canvas id="nextBubbleCanvas" width="44" height="44" class="bg-slate-700 rounded-md border border-slate-500 max-w-full"></canvas>
+            </div>
+            <!-- 右側分組提示 (後2組) -->
+            <div id="legendRight" class="flex flex-col gap-1.5 mt-2">
+                <!-- JS 動態生成 -->
+            </div>
+            
+            <!-- 多人模式：其他玩家列表 -->
+            <div id="opponentsPanel" class="hidden flex-col gap-2 mt-2">
+                <div class="text-xs font-bold text-slate-400 text-center mb-1 border-b border-slate-600 pb-1">其他玩家</div>
+                <div id="opponentsContainer" class="flex flex-col gap-3 w-full items-center">
+                    <!-- 動態加入對手的 mini canvas -->
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 系統選單 / 大廳覆蓋層 -->
+    <div id="mainMenuOverlay" class="absolute inset-0 bg-slate-900 bg-opacity-95 z-50 flex flex-col items-center justify-center p-4">
+        <h1 class="text-4xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 mb-8 drop-shadow-lg">能源對對看</h1>
+        
+        <!-- 連線中提示 -->
+        <div id="connectingMsg" class="text-white text-xl animate-pulse mb-4">連線至伺服器中...</div>
+
+        <!-- 主選單 -->
+        <div id="menuOptions" class="hidden flex-col gap-4 w-full max-w-xs">
+            <button onclick="window.startSinglePlayer()" class="w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold text-lg shadow-lg">單人遊玩</button>
+            <button onclick="window.showCreateRoom()" class="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-bold text-lg shadow-lg">創建多人房間</button>
+            <button onclick="window.showJoinRoom()" class="w-full py-3 bg-amber-600 hover:bg-amber-500 rounded-lg font-bold text-lg shadow-lg">加入多人房間</button>
+        </div>
+
+        <!-- 創建房間選單 -->
+        <div id="createRoomMenu" class="hidden flex-col gap-4 w-full max-w-xs bg-slate-800 p-6 rounded-xl border border-slate-700">
+            <h2 class="text-2xl font-bold text-white text-center">創建房間</h2>
+            <div>
+                <label class="text-sm text-slate-300 mb-1 block">時限 (分鐘): 預設3分鐘</label>
+                <input type="number" id="timeLimitInput" value="3" min="1" max="10" class="w-full bg-slate-700 text-white rounded p-2 text-center text-lg">
+            </div>
+            <button onclick="window.createRoom()" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-bold text-lg shadow-lg">創建並進入大廳</button>
+            <button onclick="window.backToMainMenu()" class="w-full py-2 bg-slate-600 hover:bg-slate-500 rounded-lg font-bold">返回</button>
+        </div>
+
+        <!-- 加入房間選單 -->
+        <div id="joinRoomMenu" class="hidden flex-col gap-4 w-full max-w-xs bg-slate-800 p-6 rounded-xl border border-slate-700">
+            <h2 class="text-2xl font-bold text-white text-center">加入房間</h2>
+            <div>
+                <label class="text-sm text-slate-300 mb-1 block">請輸入房間代碼:</label>
+                <input type="text" id="roomCodeInput" maxlength="4" placeholder="例如: ABCD" class="w-full bg-slate-700 text-white rounded p-2 text-center text-2xl uppercase font-mono tracking-widest">
+            </div>
+            <button onclick="window.joinRoom()" class="w-full py-2 bg-amber-600 hover:bg-amber-500 rounded-lg font-bold text-lg shadow-lg">加入</button>
+            <button onclick="window.backToMainMenu()" class="w-full py-2 bg-slate-600 hover:bg-slate-500 rounded-lg font-bold">返回</button>
+            <p id="joinErrorMsg" class="text-red-400 text-sm text-center hidden"></p>
+        </div>
+
+        <!-- 遊戲大廳 -->
+        <div id="lobbyMenu" class="hidden flex-col gap-4 w-full max-w-sm bg-slate-800 p-6 rounded-xl border border-slate-700">
+            <h2 class="text-2xl font-bold text-white text-center">房間大廳</h2>
+            <div class="text-center text-slate-300">房間代碼: <span id="lobbyRoomCode" class="text-3xl font-mono text-emerald-400 font-bold tracking-widest block mt-2"></span></div>
+            <div class="text-center text-sm text-slate-400 mt-1">時限: <span id="lobbyTimeLimit"></span> 分鐘</div>
+            
+            <div class="bg-slate-900 rounded-lg p-3 min-h-[150px]">
+                <h3 class="text-sm font-bold text-slate-400 border-b border-slate-700 pb-1 mb-2">已加入玩家:</h3>
+                <ul id="lobbyPlayerList" class="space-y-1 text-white text-lg">
+                    <!-- JS 生成 -->
+                </ul>
+            </div>
+
+            <button id="startGameBtn" onclick="window.startGameMultiplayer()" class="hidden w-full py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-bold text-lg shadow-lg animate-bounce mt-2">開始遊戲</button>
+            <div id="waitingHostMsg" class="text-amber-400 text-center text-sm font-bold animate-pulse mt-2 hidden">等待房主開始遊戲...</div>
+            <button onclick="window.leaveRoom()" class="w-full py-2 bg-red-600 hover:bg-red-500 rounded-lg font-bold mt-2">離開房間</button>
+        </div>
+    </div>
+
+    <!-- Firebase 與 遊戲核心腳本 -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot, collection, addDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        // 環境變數解析
+        const appId = 'energy-match-mp';
+        const firebaseConfig = {
+            apiKey: "AIzaSyChtj8wuN1EQqvp0UN6UXfijnp6evkRHB0",
+            authDomain: "energy-match-game.firebaseapp.com",
+            projectId: "energy-match-game",
+            storageBucket: "energy-match-game.firebasestorage.app",
+            messagingSenderId: "622572959981",
+            appId: "1:622572959981:web:aab2fbbd539e6f642db4e4"
+        };
+        
+        // 確保 Firebase 設定存在 (防呆)
+        let app, db, auth;
+        if (Object.keys(firebaseConfig).length > 0) {
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+        }
+
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const gameOverOverlay = document.getElementById('gameOverOverlay');
+        const nextBubbleCanvas = document.getElementById('nextBubbleCanvas');
+        const nextCtx = nextBubbleCanvas.getContext('2d');
+
+        // 遊戲核心常數
+        const WIDTH = canvas.width;
+        const HEIGHT = canvas.height;
+        const SMALL_R = 22; 
+        const BIG_R = 44;   
+        const SPEED = 15;
+        const BUBBLE_COLOR = '#cbd5e1'; 
+        const TEXT_COLOR = '#0f172a';
+
+        const CATEGORIES = [
+            { id: 0, name: "太陽能", big: "太陽能", small: ["朝南邊", "矽原料", "晴天", "學校屋頂", "太陽能"] },
+            { id: 1, name: "風力能", big: "風力能", small: ["強風", "彰化外海", "齒輪箱", "葉片", "風力能"] },
+            { id: 2, name: "水利能", big: "水利能", small: ["明潭發電廠", "高低位差", "水壩", "清理淤泥", "水利能"] },
+            { id: 3, name: "生質能", big: "生質能", small: ["焚化廠", "沼氣", "農作物", "廚餘回收", "生質能"] },
+            { id: 4, name: "地熱能", big: "地熱能", small: ["冰島", "溫泉附近", "新北金山", "水蒸氣", "地熱能"] }
+        ];
+
+        // 遊戲狀態 (單/多人共用)
+        let restingBubbles = [];
+        let fallingBubbles = [];
+        let activeBubble = null;
+        let nextBubble = null;     
+        let upcomingBubble = null; 
+        let mouseX = WIDTH / 2;
+        let mouseY = 0;
+        let isGameOver = false;
+        let score = 0;
+        let highScores = JSON.parse(localStorage.getItem('energyMatchHighScores')) || [];
+        let ceilingY = 0; 
+        let bigBubbleTimer = null; 
+        let shakeTimeout = null;   
+        let isShaking = false;     
+        let animId = null;
+        const CANNON_X = WIDTH / 2;
+        const CANNON_Y = HEIGHT - 50;
+
+        // 多人模式專用狀態
+        let isMultiplayer = false;
+        let myUserId = null;
+        let currentRoomId = null;
+        let isHost = false;
+        let roomStartTime = 0;
+        let roomTimeLimitMinutes = 3;
+        let suddenDeathActive = false;
+        let opponents = {}; // { [uid]: { bubbles: [], isGameOver: false, name: string } }
+        let roomUnsubscribe = null;
+        let playersUnsubscribe = null;
+        let attacksUnsubscribe = null;
+        let lastProcessedAttackTime = 0;
+
+        // --- Firebase 連線初始化 ---
+        async function initAuth() {
+            if (!auth) {
+                // 若無 Firebase 環境，只能玩單機
+                document.getElementById('connectingMsg').classList.add('hidden');
+                document.getElementById('menuOptions').classList.remove('hidden');
+                return;
+            }
+            try {
+                // 強制使用匿名登入，忽略環境自動注入的測試 Token
+                await signInAnonymously(auth);
+                myUserId = auth.currentUser.uid;
+                document.getElementById('connectingMsg').classList.add('hidden');
+                document.getElementById('menuOptions').classList.remove('hidden');
+            } catch (err) {
+                console.error("Auth failed:", err);
+                document.getElementById('connectingMsg').innerText = "連線失敗，僅能單人遊玩";
+                setTimeout(() => {
+                    document.getElementById('connectingMsg').classList.add('hidden');
+                    document.getElementById('menuOptions').classList.remove('hidden');
+                    document.getElementById('menuOptions').children[1].style.display = 'none'; // 隱藏多人選項
+                    document.getElementById('menuOptions').children[2].style.display = 'none';
+                }, 2000);
+            }
+        }
+        window.addEventListener('load', initAuth);
+
+        // --- 選單 UI 切換 ---
+        window.backToMainMenu = function() {
+            hideAllMenus();
+            document.getElementById('menuOptions').classList.remove('hidden');
+        }
+        function hideAllMenus() {
+            ['menuOptions', 'createRoomMenu', 'joinRoomMenu', 'lobbyMenu'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+        }
+        window.startSinglePlayer = function() {
+            isMultiplayer = false;
+            document.getElementById('mainMenuOverlay').classList.add('hidden');
+            document.getElementById('opponentsPanel').classList.add('hidden');
+            document.getElementById('timerDisplay').classList.add('hidden');
+            document.getElementById('ruleDesc').innerText = "單人模式：每30秒大泡泡下擠。";
+            initGame();
+        }
+
+        // --- 多人房間邏輯 ---
+        function generateRoomCode() {
+            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+            let result = '';
+            for (let i = 0; i < 4; i++) result += chars.charAt(Math.floor(Math.random() * chars.length));
+            return result;
+        }
+
+        window.showCreateRoom = () => { hideAllMenus(); document.getElementById('createRoomMenu').classList.remove('hidden'); }
+        window.showJoinRoom = () => { hideAllMenus(); document.getElementById('joinRoomMenu').classList.remove('hidden'); document.getElementById('joinErrorMsg').classList.add('hidden'); }
+        
+        window.createRoom = async () => {
+            if (!auth || !myUserId) return;
+            const timeLimit = parseInt(document.getElementById('timeLimitInput').value) || 3;
+            currentRoomId = generateRoomCode();
+            isHost = true;
+            
+            // Rule 1 Strict Path: artifacts/{appId}/public/data/rooms
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId);
+            await setDoc(roomRef, {
+                status: 'waiting',
+                timeLimitMinutes: timeLimit,
+                host: myUserId,
+                createdAt: Date.now()
+            });
+
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId, 'players', myUserId), {
+                name: "玩家1 (房主)",
+                isGameOver: false,
+                restingBubbles: [],
+                score: 0
+            });
+
+            enterLobby(timeLimit);
+        };
+
+        window.joinRoom = async () => {
+            if (!auth || !myUserId) return;
+            const code = document.getElementById('roomCodeInput').value.trim().toUpperCase();
+            if (code.length !== 4) return;
+            
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', code);
+            const roomSnap = await getDoc(roomRef);
+            
+            if (roomSnap.exists() && roomSnap.data().status === 'waiting') {
+                currentRoomId = code;
+                isHost = false;
+                const timeLimit = roomSnap.data().timeLimitMinutes;
+                
+                // 加入玩家列表
+                const playersCol = collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId, 'players');
+                const playersSnap = await getDocs(playersCol);
+                const pCount = playersSnap.size + 1;
+
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId, 'players', myUserId), {
+                    name: `玩家${pCount}`,
+                    isGameOver: false,
+                    restingBubbles: [],
+                    score: 0
+                });
+
+                enterLobby(timeLimit);
+            } else {
+                const err = document.getElementById('joinErrorMsg');
+                err.innerText = "找不到房間或遊戲已開始";
+                err.classList.remove('hidden');
+            }
+        };
+
+        function enterLobby(timeLimit) {
+            hideAllMenus();
+            document.getElementById('lobbyMenu').classList.remove('hidden');
+            document.getElementById('lobbyRoomCode').innerText = currentRoomId;
+            document.getElementById('lobbyTimeLimit').innerText = timeLimit;
+            
+            if (isHost) {
+                document.getElementById('startGameBtn').classList.remove('hidden');
+                document.getElementById('waitingHostMsg').classList.add('hidden');
+            } else {
+                document.getElementById('startGameBtn').classList.add('hidden');
+                document.getElementById('waitingHostMsg').classList.remove('hidden');
+            }
+
+            // 監聽房間與玩家變化
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId);
+            roomUnsubscribe = onSnapshot(roomRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (!isHost && data.status === 'playing') {
+                        roomStartTime = data.startTime;
+                        roomTimeLimitMinutes = data.timeLimitMinutes;
+                        launchMultiplayerGame();
+                    }
+                } else {
+                    // 房間被關閉
+                    window.leaveRoom();
+                }
+            }, (err) => console.error(err));
+
+            const playersCol = collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId, 'players');
+            playersUnsubscribe = onSnapshot(playersCol, (snap) => {
+                const list = document.getElementById('lobbyPlayerList');
+                list.innerHTML = '';
+                opponents = {};
+                snap.forEach(docSnap => {
+                    const data = docSnap.data();
+                    const uid = docSnap.id;
+                    list.innerHTML += `<li>${data.name} ${uid === myUserId ? '(你)' : ''}</li>`;
+                    if (uid !== myUserId) {
+                        opponents[uid] = { name: data.name, bubbles: data.restingBubbles || [], isGameOver: data.isGameOver };
+                    }
+                });
+                buildOpponentsUI();
+            }, (err) => console.error(err));
+        }
+
+        window.leaveRoom = async () => {
+            if (roomUnsubscribe) roomUnsubscribe();
+            if (playersUnsubscribe) playersUnsubscribe();
+            if (attacksUnsubscribe) attacksUnsubscribe();
+            if (currentRoomId && myUserId) {
+                try {
+                    await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId, 'players', myUserId));
+                } catch(e) {}
+            }
+            currentRoomId = null;
+            isHost = false;
+            window.backToMainMenu();
+        };
+
+        window.startGameMultiplayer = async () => {
+            if (!isHost || !currentRoomId) return;
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId);
+            const st = Date.now();
+            await updateDoc(roomRef, {
+                status: 'playing',
+                startTime: st
+            });
+            roomStartTime = st;
+            roomTimeLimitMinutes = parseInt(document.getElementById('lobbyTimeLimit').innerText);
+            launchMultiplayerGame();
+        };
+
+        function buildOpponentsUI() {
+            const container = document.getElementById('opponentsContainer');
+            container.innerHTML = '';
+            Object.keys(opponents).forEach(uid => {
+                const wrapper = document.createElement('div');
+                wrapper.className = "flex flex-col items-center bg-slate-800 p-1 border border-slate-600 rounded";
+                wrapper.innerHTML = `
+                    <div class="text-[10px] text-slate-300 font-bold mb-1 truncate w-full text-center">${opponents[uid].name}</div>
+                    <canvas id="oppCanvas_${uid}" width="120" height="180" class="bg-slate-900 border border-slate-700"></canvas>
+                `;
+                container.appendChild(wrapper);
+                opponents[uid].canvas = wrapper.querySelector('canvas');
+            });
+        }
+
+        function launchMultiplayerGame() {
+            isMultiplayer = true;
+            document.getElementById('mainMenuOverlay').classList.add('hidden');
+            document.getElementById('opponentsPanel').classList.remove('hidden');
+            document.getElementById('timerDisplay').classList.remove('hidden');
+            document.getElementById('ruleDesc').innerText = "多人模式：時限內消除送泡泡，時限後驟死賽。";
+            
+            // 監聽攻擊
+            lastProcessedAttackTime = Date.now();
+            const attacksCol = collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId, 'attacks');
+            attacksUnsubscribe = onSnapshot(attacksCol, (snap) => {
+                snap.docChanges().forEach(change => {
+                    if (change.type === 'added') {
+                        const atk = change.doc.data();
+                        if (atk.to === myUserId && atk.time > lastProcessedAttackTime) {
+                            receiveAttack(atk.type, atk.count);
+                            lastProcessedAttackTime = Math.max(lastProcessedAttackTime, atk.time);
+                        }
+                    }
+                });
+            }, (err) => console.error(err));
+
+            initGame();
+        }
+
+        // --- 核心遊戲與同步邏輯 ---
+        
+        async function syncBoard() {
+            if (!isMultiplayer || !currentRoomId || !myUserId) return;
+            try {
+                // 簡化資料以減少傳輸量
+                const simplified = restingBubbles.map(b => ({
+                    x: Math.round(b.x), y: Math.round(b.y), r: b.r,
+                    categoryId: b.categoryId, text: b.text, isBig: b.isBig
+                }));
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId, 'players', myUserId), {
+                    restingBubbles: simplified,
+                    score: score,
+                    isGameOver: isGameOver
+                });
+            } catch(e) {}
+        }
+
+        async function sendAttack(type, count) {
+            if (!isMultiplayer || !currentRoomId || count <= 0) return;
+            const attacksCol = collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId, 'attacks');
+            Object.keys(opponents).forEach(async uid => {
+                if (!opponents[uid].isGameOver) {
+                    try {
+                        await addDoc(attacksCol, {
+                            to: uid, from: myUserId, type: type, count: count, time: Date.now()
+                        });
+                    } catch(e){}
+                }
+            });
+        }
+
+        function receiveAttack(type, count) {
+            if (isGameOver) return;
+            for (let i = 0; i < count; i++) {
+                // 在頂部隨機位置產生
+                const rx = (Math.random() * (WIDTH - SMALL_R*2)) + SMALL_R;
+                const newBubble = generateBubble(rx, type === 'big' ? BIG_R + 2 : SMALL_R + 2, type);
+                newBubble.targetX = rx;
+                newBubble.targetY = newBubble.r + 2;
+                restingBubbles.push(newBubble);
+                pushAndSettleBubbles(newBubble);
+            }
+            checkFloatingBubbles();
+            checkGameOver();
+            syncBoard();
+        }
+
+        function generateBubble(x, y, type = 'small') {
+            const cat = CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
+            let isBig = (type === 'big');
+            let text = isBig ? cat.big : cat.small[Math.floor(Math.random() * cat.small.length)];
+            return { x, y, r: isBig ? BIG_R : SMALL_R, categoryId: cat.id, text, isBig, vx: 0, vy: 0, targetX: x, targetY: y };
+        }
+
+        function updateScoreDisplay() {
+            document.getElementById('currentScore').innerText = score;
+        }
+
+        function initLegend() {
+            const leftContainer = document.getElementById('legendLeft');
+            const rightContainer = document.getElementById('legendRight');
+            let leftHtml = '', rightHtml = '';
+            CATEGORIES.forEach((cat, index) => {
+                const html = `
+                    <div class="hud-panel p-1 sm:p-2 rounded-md border border-slate-600 shadow-sm text-[9px] sm:text-[10px] md:text-xs leading-tight">
+                        <span class="text-yellow-400 font-bold block mb-0.5">${cat.name}</span>
+                        <span class="text-slate-300 break-words">${cat.small.join('、')}</span>
+                    </div>`;
+                if (index < 3) leftHtml += html; else rightHtml += html;
+            });
+            leftContainer.innerHTML = leftHtml;
+            rightContainer.innerHTML = rightHtml;
+        }
+
+        function drawBubbleToCtx(targetCtx, b, offsetX = 0, offsetY = 0, isMini = false) {
+            const drawX = b.x + offsetX;
+            const drawY = b.y + offsetY;
+
+            targetCtx.beginPath();
+            targetCtx.arc(drawX, drawY, b.r, 0, Math.PI * 2);
+            targetCtx.fillStyle = BUBBLE_COLOR;
+            targetCtx.fill();
+            
+            const gradient = targetCtx.createRadialGradient(drawX - b.r*0.3, drawY - b.r*0.3, b.r*0.1, drawX, drawY, b.r);
+            gradient.addColorStop(0, 'rgba(255, 255, 255, 0.8)');
+            gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            targetCtx.fillStyle = gradient;
+            targetCtx.fill();
+            targetCtx.lineWidth = 2;
+            targetCtx.strokeStyle = '#94a3b8';
+            targetCtx.stroke();
+
+            if (!isMini) {
+                targetCtx.fillStyle = TEXT_COLOR;
+                targetCtx.textAlign = 'center';
+                targetCtx.textBaseline = 'middle';
+                let fontRatio = (targetCtx === nextCtx) ? 0.7 : 1; 
+                if (b.isBig) {
+                    targetCtx.font = `bold ${Math.floor(20 * fontRatio)}px Inter, Microsoft JhengHei`;
+                    targetCtx.fillText(b.text, drawX, drawY);
+                } else {
+                    targetCtx.font = `bold ${Math.floor(12 * fontRatio)}px Inter, Microsoft JhengHei`;
+                    if (b.text.length > 3) {
+                        targetCtx.fillText(b.text.substring(0, 2), drawX, drawY - (7 * fontRatio));
+                        targetCtx.fillText(b.text.substring(2), drawX, drawY + (7 * fontRatio));
+                    } else {
+                        targetCtx.fillText(b.text, drawX, drawY);
+                    }
+                }
+            } else if (b.isBig) {
+                // Mini canvas indicator for big bubbles
+                targetCtx.fillStyle = 'rgba(255,0,0,0.3)';
+                targetCtx.beginPath();
+                targetCtx.arc(drawX, drawY, b.r*0.8, 0, Math.PI * 2);
+                targetCtx.fill();
+            }
+        }
+
+        function drawUpcomingBubblePreview() {
+            nextCtx.clearRect(0, 0, nextBubbleCanvas.width, nextBubbleCanvas.height);
+            if (upcomingBubble) {
+                let tempX = upcomingBubble.x, tempY = upcomingBubble.y, tempR = upcomingBubble.r;
+                upcomingBubble.x = nextBubbleCanvas.width / 2;
+                upcomingBubble.y = nextBubbleCanvas.height / 2;
+                upcomingBubble.r = (nextBubbleCanvas.width / 2) - 4; 
+                drawBubbleToCtx(nextCtx, upcomingBubble);
+                upcomingBubble.x = tempX; upcomingBubble.y = tempY; upcomingBubble.r = tempR;
+            }
+        }
+
+        function pushAndSettleBubbles(fixedBubble) {
+            let moved = true;
+            let iterations = 0;
+            while (moved && iterations < 300) {
+                moved = false;
+                iterations++;
+                for (let i = 0; i < restingBubbles.length; i++) {
+                    for (let j = i + 1; j < restingBubbles.length; j++) {
+                        let b1 = restingBubbles[i];
+                        let b2 = restingBubbles[j];
+                        let dx = b2.x - b1.x, dy = b2.y - b1.y;
+                        let dist = Math.hypot(dx, dy);
+                        let minDist = b1.r + b2.r + 1; 
+                        
+                        if (dist < minDist) {
+                            moved = true;
+                            let overlap = minDist - dist;
+                            if (dist === 0) { dx = 1; dy = 1; dist = Math.SQRT2; }
+                            let nx = dx / dist, ny = dy / dist;
+
+                            if (b1 === fixedBubble) {
+                                b2.x += nx * overlap; b2.y += ny * overlap; 
+                            } else if (b2 === fixedBubble) {
+                                b1.x -= nx * overlap; b1.y -= ny * overlap; 
+                            } else {
+                                b1.x -= nx * overlap * 0.5; b1.y -= ny * overlap * 0.5;
+                                b2.x += nx * overlap * 0.5; b2.y += ny * overlap * 0.5;
+                            }
+                        }
+                    }
+                }
+                for (let b of restingBubbles) {
+                    if (b.x - b.r < 0) b.x = b.r;
+                    if (b.x + b.r > WIDTH) b.x = WIDTH - b.r;
+                    if (b.y - b.r < 0) b.y = b.r; 
+                }
+                if (fixedBubble) {
+                    fixedBubble.x = fixedBubble.targetX;
+                    fixedBubble.y = fixedBubble.targetY;
+                }
+            }
+        }
+
+        function prepareSpawnBigBubble() {
+            if (isGameOver) return;
+            isShaking = true;
+            shakeTimeout = setTimeout(() => {
+                isShaking = false;
+                spawnBigBubble();
+            }, 2000);
+        }
+
+        function spawnBigBubble() {
+            if (isGameOver) return;
+            const validXs = [WIDTH / 2 - BIG_R, WIDTH / 2, WIDTH / 2 + BIG_R];
+            const rx = validXs[Math.floor(Math.random() * validXs.length)];
+            const newBig = generateBubble(rx, BIG_R + 2, 'big');
+            newBig.targetX = rx;
+            newBig.targetY = BIG_R + 2;
+            restingBubbles.push(newBig);
+            pushAndSettleBubbles(newBig);
+            checkFloatingBubbles();
+            checkGameOver();
+            syncBoard();
+        }
+
+        function initGame() {
+            restingBubbles = []; fallingBubbles = [];
+            isGameOver = false; ceilingY = 0; score = 0;
+            updateScoreDisplay();
+            isShaking = false;
+            gameOverOverlay.classList.add('hidden');
+            initLegend();
+            suddenDeathActive = false;
+
+            if (bigBubbleTimer) clearInterval(bigBubbleTimer);
+            if (shakeTimeout) clearTimeout(shakeTimeout);
+
+            const initialBig = generateBubble(WIDTH / 2, BIG_R + 5, 'big');
+            initialBig.targetX = WIDTH / 2; initialBig.targetY = BIG_R + 5;
+            restingBubbles.push(initialBig);
+
+            const rows = 5;
+            for (let row = 0; row < rows; row++) {
+                const cols = row % 2 === 0 ? 10 : 9;
+                const startX = row % 2 === 0 ? SMALL_R + 5 : SMALL_R * 2 + 5;
+                const y = SMALL_R + row * (SMALL_R * Math.sqrt(3)); 
+                for (let col = 0; col < cols; col++) {
+                    const x = startX + col * (SMALL_R * 2 + 2);
+                    if (Math.hypot(x - initialBig.x, y - initialBig.y) > initialBig.r - SMALL_R / 2) {
+                        restingBubbles.push(generateBubble(x, y, 'small'));
+                    }
+                }
+            }
+            pushAndSettleBubbles(initialBig);
+            syncBoard();
+
+            nextBubble = generateBubble(CANNON_X, CANNON_Y, 'small');
+            upcomingBubble = generateBubble(CANNON_X, CANNON_Y, 'small');
+            drawUpcomingBubblePreview();
+            
+            if (!isMultiplayer) {
+                // 單人模式傳統 30s
+                bigBubbleTimer = setInterval(prepareSpawnBigBubble, 30000);
+            }
+
+            if (animId) cancelAnimationFrame(animId);
+            gameLoop();
+        }
+        window.initGame = initGame;
+        
+        window.resetGame = function() {
+            if (isMultiplayer) {
+                // 多人模式下再玩一次 = 回大廳
+                if(isHost) {
+                    updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId), { status: 'waiting' });
+                }
+                enterLobby(roomTimeLimitMinutes);
+            } else {
+                initGame();
+            }
+        }
+        window.backToMenu = function() {
+            if (isMultiplayer) window.leaveRoom();
+            else window.backToMainMenu();
+            gameOverOverlay.classList.add('hidden');
+        }
+
+        function checkCollisions() {
+            if (!activeBubble) return;
+            if (activeBubble.x - activeBubble.r <= 0) { activeBubble.x = activeBubble.r; activeBubble.vx *= -1; } 
+            else if (activeBubble.x + activeBubble.r >= WIDTH) { activeBubble.x = WIDTH - activeBubble.r; activeBubble.vx *= -1; }
+
+            let collided = false;
+            if (activeBubble.y - activeBubble.r <= ceilingY) { activeBubble.y = ceilingY + activeBubble.r; collided = true; }
+            if (!collided) {
+                for (let rb of restingBubbles) {
+                    const dist = Math.hypot(activeBubble.x - rb.x, activeBubble.y - rb.y);
+                    if (dist < activeBubble.r + rb.r) {
+                        const overlap = (activeBubble.r + rb.r) - dist;
+                        const dx = activeBubble.x - rb.x, dy = activeBubble.y - rb.y;
+                        const normalizeDist = dist === 0 ? 1 : dist;
+                        activeBubble.x += (dx / normalizeDist) * overlap;
+                        activeBubble.y += (dy / normalizeDist) * overlap;
+                        collided = true; break;
+                    }
+                }
+            }
+
+            if (collided) {
+                let shouldVanish = false;
+                for (let rb of restingBubbles) {
+                    if (rb.isBig && rb.categoryId === activeBubble.categoryId && Math.hypot(activeBubble.x - rb.x, activeBubble.y - rb.y) <= activeBubble.r + rb.r + 5) {
+                        for (let attached of restingBubbles) {
+                            if (!attached.isBig && attached.categoryId === rb.categoryId && attached.text === activeBubble.text && Math.hypot(rb.x - attached.x, rb.y - attached.y) <= rb.r + attached.r + 5) {
+                                shouldVanish = true; break;
+                            }
+                        }
+                    }
+                    if (shouldVanish) break;
+                }
+
+                if (shouldVanish) { activeBubble = null; return; }
+
+                activeBubble.vx = 0; activeBubble.vy = 0;
+                restingBubbles.push(activeBubble);
+                const bubbleToCheck = activeBubble;
+                activeBubble = null;
+                
+                handleMatch(bubbleToCheck);
+                checkGameOver();
+                syncBoard();
+            }
+        }
+
+        function handleMatch(startBubble) {
+            let matchedSmall = [];
+            if (!startBubble.isBig) {
+                let queue = [startBubble];
+                let visited = new Set(); visited.add(startBubble);
+                while (queue.length > 0) {
+                    let curr = queue.shift();
+                    matchedSmall.push(curr);
+                    for (let rb of restingBubbles) {
+                        if (!visited.has(rb) && !rb.isBig && rb.categoryId === startBubble.categoryId) {
+                            if (Math.hypot(curr.x - rb.x, curr.y - rb.y) <= curr.r + rb.r + 5) {
+                                visited.add(rb); queue.push(rb);
+                            }
+                        }
+                    }
+                }
+            }
+
+            let toRemove = new Set();
+            if (matchedSmall.length >= 3) {
+                const points = 50 * Math.pow(2, matchedSmall.length - 3);
+                score += points;
+                for (let b of matchedSmall) toRemove.add(b);
+                // 多人模式：傳送小泡泡攻擊
+                if (isMultiplayer) sendAttack('small', matchedSmall.length - 2);
+            }
+
+            let bigMatchedCount = 0;
+            for (let b of restingBubbles) {
+                if (b.isBig) {
+                    let attachedTexts = new Set();
+                    let attachedBubbles = [];
+                    for (let rb of restingBubbles) {
+                        if (!rb.isBig && rb.categoryId === b.categoryId && Math.hypot(b.x - rb.x, b.y - rb.y) <= b.r + rb.r + 5) {
+                            attachedTexts.add(rb.text); attachedBubbles.push(rb);
+                        }
+                    }
+                    if (attachedTexts.size >= 3) {
+                        toRemove.add(b); bigMatchedCount++;
+                        for (let ab of attachedBubbles) toRemove.add(ab);
+                    }
+                }
+            }
+
+            if (toRemove.size > 0) {
+                score += bigMatchedCount * 200;
+                // 多人模式：傳送大泡泡攻擊
+                if (isMultiplayer && bigMatchedCount > 0) sendAttack('big', bigMatchedCount);
+                
+                restingBubbles = restingBubbles.filter(b => !toRemove.has(b));
+                checkFloatingBubbles();
+                updateScoreDisplay();
+            }
+        }
+
+        function checkFloatingBubbles() {
+            let connectedToCeiling = new Set();
+            let queue = [];
+            for (let rb of restingBubbles) {
+                if (rb.y - rb.r <= ceilingY + 5) { connectedToCeiling.add(rb); queue.push(rb); }
+            }
+            while (queue.length > 0) {
+                let curr = queue.shift();
+                for (let rb of restingBubbles) {
+                    if (!connectedToCeiling.has(rb) && Math.hypot(curr.x - rb.x, curr.y - rb.y) <= curr.r + rb.r + 5) {
+                        connectedToCeiling.add(rb); queue.push(rb);
+                    }
+                }
+            }
+            let newResting = [];
+            for (let rb of restingBubbles) {
+                if (connectedToCeiling.has(rb)) {
+                    newResting.push(rb);
+                } else {
+                    rb.vx = (Math.random() - 0.5) * 4; rb.vy = 0;
+                    fallingBubbles.push(rb);
+                    score += 100; 
+                }
+            }
+            restingBubbles = newResting;
+            updateScoreDisplay();
+        }
+
+        function checkGameOver() {
+            if (isGameOver) return;
+            for (let rb of restingBubbles) {
+                if (rb.y + rb.r >= CANNON_Y - 30) {
+                    showGameOver(false);
+                    return;
+                }
+            }
+        }
+
+        function showGameOver(isWin) {
+            isGameOver = true;
+            gameOverOverlay.classList.remove('hidden');
+            if (bigBubbleTimer) clearInterval(bigBubbleTimer);
+            if (shakeTimeout) clearTimeout(shakeTimeout);
+            
+            document.getElementById('finalScore').innerText = score;
+            
+            if (isMultiplayer) {
+                document.getElementById('gameOverTitle').innerText = isWin ? "您獲勝了！" : "您被淘汰了";
+                document.getElementById('gameOverTitle').className = isWin ? "text-3xl sm:text-4xl font-bold text-emerald-400 mb-2" : "text-3xl sm:text-4xl font-bold text-red-400 mb-2";
+                document.getElementById('leaderboardPanel').classList.add('hidden');
+                syncBoard(); // Update DB to register death
+            } else {
+                document.getElementById('gameOverTitle').innerText = "遊戲結束";
+                document.getElementById('gameOverTitle').className = "text-3xl sm:text-4xl font-bold text-red-400 mb-2";
+                document.getElementById('leaderboardPanel').classList.remove('hidden');
+                
+                highScores.push(score);
+                highScores.sort((a, b) => b - a); 
+                highScores = highScores.slice(0, 5); 
+                localStorage.setItem('energyMatchHighScores', JSON.stringify(highScores));
+                
+                const list = document.getElementById('leaderboardList');
+                list.innerHTML = '';
+                highScores.forEach((s, i) => {
+                    let colorClass = i === 0 ? 'text-yellow-400 font-bold' : 'text-slate-300';
+                    list.innerHTML += `<li class="flex justify-between items-center bg-slate-700/50 px-3 py-1 rounded"><span>第 ${i+1} 名</span><span class="${colorClass}">${s} 分</span></li>`;
+                });
+            }
+        }
+
+        function checkMultiplayerWin() {
+            if (!isMultiplayer || isGameOver) return;
+            const keys = Object.keys(opponents);
+            if (keys.length > 0) {
+                let allOthersDead = true;
+                for (let k of keys) {
+                    if (!opponents[k].isGameOver) { allOthersDead = false; break; }
+                }
+                if (allOthersDead) showGameOver(true);
+            }
+        }
+
+        function drawTrajectory(angle) {
+            let cx = CANNON_X, cy = CANNON_Y;
+            let step = 10, maxSteps = 100, currentAngle = angle;
+            ctx.beginPath(); ctx.moveTo(cx, cy);
+            for (let i = 0; i < maxSteps; i++) {
+                let nextX = cx + Math.cos(currentAngle) * step;
+                let nextY = cy + Math.sin(currentAngle) * step;
+                if (nextX - nextBubble.r <= 0 || nextX + nextBubble.r >= WIDTH) {
+                    currentAngle = Math.PI - currentAngle;
+                    nextX = cx + Math.cos(currentAngle) * step; nextY = cy + Math.sin(currentAngle) * step;
+                }
+                if (nextY - nextBubble.r <= ceilingY) break;
+                
+                let hit = false;
+                for (let rb of restingBubbles) {
+                    if (Math.hypot(nextX - rb.x, nextY - rb.y) <= nextBubble.r + rb.r) { hit = true; break; }
+                }
+                cx = nextX; cy = nextY; ctx.lineTo(cx, cy);
+                if (hit) break;
+            }
+            ctx.setLineDash([10, 10]); ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.stroke(); ctx.setLineDash([]); 
+        }
+
+        function drawOpponentsMinis() {
+            Object.keys(opponents).forEach(uid => {
+                const opp = opponents[uid];
+                if (!opp.canvas) return;
+                const oCtx = opp.canvas.getContext('2d');
+                oCtx.clearRect(0, 0, opp.canvas.width, opp.canvas.height);
+                
+                const scale = opp.canvas.width / 480;
+                oCtx.save(); oCtx.scale(scale, scale);
+                
+                if (opp.bubbles) {
+                    opp.bubbles.forEach(b => drawBubbleToCtx(oCtx, b, 0, 0, true));
+                }
+                oCtx.restore();
+
+                if (opp.isGameOver) {
+                    oCtx.fillStyle = 'rgba(0,0,0,0.6)';
+                    oCtx.fillRect(0, 0, opp.canvas.width, opp.canvas.height);
+                    oCtx.fillStyle = 'red';
+                    oCtx.font = 'bold 24px sans-serif';
+                    oCtx.textAlign = 'center';
+                    oCtx.textBaseline = 'middle';
+                    oCtx.fillText('淘汰', opp.canvas.width/2, opp.canvas.height/2);
+                }
+            });
+        }
+
+        function gameLoop() {
+            if (isMultiplayer && roomStartTime > 0 && !isGameOver) {
+                let elapsed = Date.now() - roomStartTime;
+                let remaining = (roomTimeLimitMinutes * 60000) - elapsed;
+                let timerDisplay = document.getElementById('timerDisplay');
+                if (remaining > 0) {
+                    let m = Math.floor(remaining / 60000);
+                    let s = Math.floor((remaining % 60000) / 1000);
+                    timerDisplay.innerText = `距離驟死賽: ${m}:${s.toString().padStart(2, '0')}`;
+                } else {
+                    timerDisplay.innerText = `驟死賽開始！(每30秒大泡泡)`;
+                    timerDisplay.classList.add('text-red-400');
+                    if (!suddenDeathActive) {
+                        suddenDeathActive = true;
+                        prepareSpawnBigBubble();
+                        bigBubbleTimer = setInterval(prepareSpawnBigBubble, 30000);
+                    }
+                }
+                checkMultiplayerWin();
+                drawOpponentsMinis();
+            }
+
+            if (!isGameOver || isMultiplayer) { 
+                // 多人模式即使死亡也繼續繪製畫面觀戰
+                ctx.clearRect(0, 0, WIDTH, HEIGHT);
+                const dx = mouseX - CANNON_X, dy = mouseY - CANNON_Y;
+                let angle = Math.atan2(dy, dx);
+                if (angle > -0.1 && angle < Math.PI / 2) angle = -0.1;
+                if (angle < Math.PI && angle >= Math.PI / 2) angle = Math.PI + 0.1;
+
+                if (!activeBubble && nextBubble && !isGameOver) drawTrajectory(angle);
+
+                for (let i = fallingBubbles.length - 1; i >= 0; i--) {
+                    let fb = fallingBubbles[i];
+                    fb.vy += 0.5; fb.x += fb.vx; fb.y += fb.vy;
+                    drawBubbleToCtx(ctx, fb);
+                    if (fb.y - fb.r > HEIGHT) fallingBubbles.splice(i, 1);
+                }
+
+                if (activeBubble) {
+                    activeBubble.x += activeBubble.vx; activeBubble.y += activeBubble.vy;
+                    checkCollisions();
+                }
+
+                for (let rb of restingBubbles) {
+                    let ox = 0, oy = 0;
+                    if (isShaking) { ox = (Math.random() - 0.5) * 6; oy = (Math.random() - 0.5) * 6; }
+                    drawBubbleToCtx(ctx, rb, ox, oy);
+                }
+
+                ctx.fillStyle = '#334155'; ctx.beginPath(); ctx.arc(CANNON_X, CANNON_Y + 20, 40, Math.PI, 0); ctx.fill();
+
+                if (activeBubble) drawBubbleToCtx(ctx, activeBubble);
+                if (nextBubble && !activeBubble && !isGameOver) {
+                    nextBubble.x = CANNON_X; nextBubble.y = CANNON_Y;
+                    drawBubbleToCtx(ctx, nextBubble);
+                }
+            }
+
+            animId = requestAnimationFrame(gameLoop);
+        }
+
+        const updatePointerPos = (e) => {
+            const rect = canvas.getBoundingClientRect();
+            let clientX = e.clientX, clientY = e.clientY;
+            if (e.touches && e.touches.length > 0) { clientX = e.touches[0].clientX; clientY = e.touches[0].clientY; } 
+            else if (e.changedTouches && e.changedTouches.length > 0) { clientX = e.changedTouches[0].clientX; clientY = e.changedTouches[0].clientY; }
+            mouseX = (clientX - rect.left) * (canvas.width / rect.width);
+            mouseY = (clientY - rect.top) * (canvas.height / rect.height);
+        };
+
+        const fireAction = () => {
+            if (isGameOver || activeBubble || !nextBubble) return;
+            const dx = mouseX - CANNON_X, dy = mouseY - CANNON_Y;
+            let angle = Math.atan2(dy, dx);
+            if (angle > -0.1 && angle < Math.PI / 2) angle = -0.1;
+            if (angle < Math.PI && angle >= Math.PI / 2) angle = Math.PI + 0.1;
+            activeBubble = nextBubble;
+            activeBubble.vx = Math.cos(angle) * SPEED; activeBubble.vy = Math.sin(angle) * SPEED;
+            nextBubble = upcomingBubble;
+            nextBubble.x = CANNON_X; nextBubble.y = CANNON_Y;
+            upcomingBubble = generateBubble(CANNON_X, CANNON_Y, 'small');
+            drawUpcomingBubblePreview();
+        };
+
+        canvas.addEventListener('mousemove', updatePointerPos);
+        canvas.addEventListener('click', fireAction);
+        canvas.addEventListener('touchstart', (e) => { e.preventDefault(); updatePointerPos(e); }, { passive: false });
+        canvas.addEventListener('touchmove', (e) => { e.preventDefault(); updatePointerPos(e); }, { passive: false });
+        canvas.addEventListener('touchend', (e) => { e.preventDefault(); fireAction(); }, { passive: false });
+    </script>
+</body>
+</html>
